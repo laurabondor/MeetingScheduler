@@ -28,12 +28,10 @@ Meeting Scheduler is a graphical application developed as part of the "Programmi
 
 Example commands in the interactive menu:
 ```
-add person Ion Popescu
-schedule meeting start 2020-11-20 14:00 end 2020-11-20 14:30 participants Ion Popescu Ana Maria
-display meetings interval 2020-11-20 08:00 2020-11-20 23:59
+adauga persoana Popescu Ion
+adauga sedinta care va incepe la 2020-11-20 14:00, se va termina la 2020-11-20 14:30 si la care vor participa Ion Popescu, Ana Maria
+adauga sedinta 2020-11-20 17:00 2020-11-20 18:00, cu participantii Ion Popescu, Ana Maria
+afiseaza sedintele din intervalul 2020-11-20 08:00, 2020-11-20 23:59
+exporta sedintele
+importa sedintele din meetings.ics
 ```
-
-
-
-
-
