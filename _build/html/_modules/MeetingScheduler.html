@@ -1,0 +1,477 @@
+
+<!DOCTYPE html>
+
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MeetingScheduler &#8212; MeetingScheduler  documentation</title>
+    <link rel="stylesheet" type="text/css" href="../_static/pygments.css" />
+    <link rel="stylesheet" type="text/css" href="../_static/alabaster.css" />
+    <script data-url_root="../" id="documentation_options" src="../_static/documentation_options.js"></script>
+    <script src="../_static/jquery.js"></script>
+    <script src="../_static/underscore.js"></script>
+    <script src="../_static/doctools.js"></script>
+    <link rel="index" title="Index" href="../genindex.html" />
+    <link rel="search" title="Search" href="../search.html" />
+   
+  <link rel="stylesheet" href="../_static/custom.css" type="text/css" />
+  
+  
+  <meta name="viewport" content="width=device-width, initial-scale=0.9, maximum-scale=0.9" />
+
+  </head><body>
+  
+
+    <div class="document">
+      <div class="documentwrapper">
+        <div class="bodywrapper">
+          
+
+          <div class="body" role="main">
+            
+  <h1>Source code for MeetingScheduler</h1><div class="highlight"><pre>
+<span></span><span class="kn">import</span> <span class="nn">psycopg2</span>
+<span class="kn">import</span> <span class="nn">re</span>
+<span class="kn">from</span> <span class="nn">datetime</span> <span class="kn">import</span> <span class="n">datetime</span>
+
+<span class="c1"># Connecting to the database using psycopg2</span>
+<span class="n">conn</span> <span class="o">=</span> <span class="n">psycopg2</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="n">host</span><span class="o">=</span><span class="s2">&quot;localhost&quot;</span><span class="p">,</span> <span class="n">dbname</span><span class="o">=</span><span class="s2">&quot;postgres&quot;</span><span class="p">,</span> <span class="n">user</span><span class="o">=</span><span class="s2">&quot;postgres&quot;</span><span class="p">,</span> <span class="n">password</span><span class="o">=</span><span class="s2">&quot;2002&quot;</span><span class="p">,</span> <span class="n">port</span><span class="o">=</span><span class="mi">5432</span><span class="p">)</span>
+<span class="n">cur</span> <span class="o">=</span> <span class="n">conn</span><span class="o">.</span><span class="n">cursor</span><span class="p">()</span>
+
+<div class="viewcode-block" id="initialize_database"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.initialize_database">[docs]</a><span class="k">def</span> <span class="nf">initialize_database</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Initialize the database by creating &#39;Persons&#39; and &#39;Meetings&#39; tables if they don&#39;t exist</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">            CREATE TABLE IF NOT EXISTS Persons (</span>
+<span class="s2">                person_id SERIAL PRIMARY KEY,</span>
+<span class="s2">                name VARCHAR(100) NOT NULL</span>
+<span class="s2">            )</span>
+<span class="s2">        &quot;&quot;&quot;</span><span class="p">)</span>
+
+        <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;&quot;&quot;</span>
+<span class="s2">            CREATE TABLE IF NOT EXISTS Meetings (</span>
+<span class="s2">                meeting_id SERIAL PRIMARY KEY,</span>
+<span class="s2">                start_time TIMESTAMP NOT NULL,</span>
+<span class="s2">                end_time TIMESTAMP NOT NULL,</span>
+<span class="s2">                participants VARCHAR(1000)[] NOT NULL</span>
+<span class="s2">            )</span>
+<span class="s2">        &quot;&quot;&quot;</span><span class="p">)</span>
+
+        <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Database initialized successfully!&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">psycopg2</span><span class="o">.</span><span class="n">Error</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Database error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;An error occurred: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+        
+<div class="viewcode-block" id="validate_name"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.validate_name">[docs]</a><span class="k">def</span> <span class="nf">validate_name</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The function checks if the provided name contains at least two parts (first name and last name) </span>
+<span class="sd">    and if all characters in the name are within the allowed set of characters, which includes </span>
+<span class="sd">    letters (uppercase and lowercase), spaces, and hyphens.</span>
+<span class="sd">    :param name: the name to be validated</span>
+<span class="sd">    :return: True if the name meets the criteria, False otherwise</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">())</span> <span class="o">&lt;</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    
+    <span class="n">allowed_characters</span> <span class="o">=</span> <span class="s2">&quot;abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ -&quot;</span>
+    <span class="k">if</span> <span class="ow">not</span> <span class="nb">all</span><span class="p">(</span><span class="n">char</span> <span class="ow">in</span> <span class="n">allowed_characters</span> <span class="k">for</span> <span class="n">char</span> <span class="ow">in</span> <span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="kc">False</span>
+    
+    <span class="k">return</span> <span class="kc">True</span></div>
+
+<div class="viewcode-block" id="extract_person_name"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.extract_person_name">[docs]</a><span class="k">def</span> <span class="nf">extract_person_name</span><span class="p">(</span><span class="n">command</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Extracts the name of the person entered in the command line.</span>
+<span class="sd">    :param command: the command given as input</span>
+<span class="sd">    :return: the name extracted from the input command or None if the name extracted is not in a valid form</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">parts</span> <span class="o">=</span> <span class="n">command</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39; &#39;</span><span class="p">)</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s1">&#39; &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">parts</span><span class="p">[</span><span class="mi">2</span><span class="p">:])</span>
+    
+    <span class="k">if</span> <span class="n">validate_name</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+        <span class="k">return</span> <span class="n">name</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span> </div>
+    
+<div class="viewcode-block" id="normalize_name"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.normalize_name">[docs]</a><span class="k">def</span> <span class="nf">normalize_name</span><span class="p">(</span><span class="n">name</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    The function performs the following operations on the provided name:</span>
+<span class="sd">    1. Removes leading and trailing whitespaces</span>
+<span class="sd">    2. Converts the name to lowercase</span>
+<span class="sd">    3. Replaces hyphens with spaces</span>
+<span class="sd">    4. Consolidates multiple consecutive spaces into a single space</span>
+<span class="sd">    :param name: the name to be normalized</span>
+<span class="sd">    :return: the normalized name</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="n">name</span><span class="o">.</span><span class="n">replace</span><span class="p">(</span><span class="s2">&quot;-&quot;</span><span class="p">,</span> <span class="s2">&quot; &quot;</span><span class="p">)</span>
+    <span class="n">name</span> <span class="o">=</span> <span class="s2">&quot; &quot;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">name</span><span class="o">.</span><span class="n">split</span><span class="p">())</span>
+    
+    <span class="k">return</span> <span class="n">name</span></div>
+
+<div class="viewcode-block" id="are_names_equivalent"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.are_names_equivalent">[docs]</a><span class="k">def</span> <span class="nf">are_names_equivalent</span><span class="p">(</span><span class="n">name1</span><span class="p">,</span> <span class="n">name2</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Check if two names are equivalent after normalization.</span>
+<span class="sd">    :param name1: the first name for comparison</span>
+<span class="sd">    :param name2: the second name for comparison</span>
+<span class="sd">    :return: True if the normalized tokens of the names are equivalent, False otherwise</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name1_tokens</span> <span class="o">=</span> <span class="n">normalize_name</span><span class="p">(</span><span class="n">name1</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+    <span class="n">name2_tokens</span> <span class="o">=</span> <span class="n">normalize_name</span><span class="p">(</span><span class="n">name2</span><span class="p">)</span><span class="o">.</span><span class="n">split</span><span class="p">()</span>
+
+    <span class="k">return</span> <span class="nb">set</span><span class="p">(</span><span class="n">name1_tokens</span><span class="p">)</span> <span class="o">==</span> <span class="nb">set</span><span class="p">(</span><span class="n">name2_tokens</span><span class="p">)</span> </div>
+    
+<div class="viewcode-block" id="add_person"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.add_person">[docs]</a><span class="k">def</span> <span class="nf">add_person</span><span class="p">(</span><span class="n">name</span><span class="p">):</span> 
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Adds a person&#39;s name to the database if the name does not already exist.</span>
+<span class="sd">    :param name: the name of the person to be added </span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;SELECT name FROM Persons&quot;</span><span class="p">)</span>
+        <span class="n">existing_names</span> <span class="o">=</span> <span class="n">cur</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">existing_name</span> <span class="ow">in</span> <span class="n">existing_names</span><span class="p">:</span>
+            <span class="n">existing_name</span> <span class="o">=</span> <span class="n">existing_name</span><span class="p">[</span><span class="mi">0</span><span class="p">]</span>
+            <span class="k">if</span> <span class="n">are_names_equivalent</span><span class="p">(</span><span class="n">name</span><span class="p">,</span> <span class="n">existing_name</span><span class="p">):</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> is equivalent to an existing name in the database: </span><span class="si">{</span><span class="n">existing_name</span><span class="si">}</span><span class="s2">. Not added&quot;</span><span class="p">)</span>
+                <span class="k">return</span>
+
+        <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;INSERT INTO Persons (name) VALUES (</span><span class="si">%s</span><span class="s2">)&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">name</span><span class="p">,))</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Added </span><span class="si">{</span><span class="n">name</span><span class="si">}</span><span class="s2"> to the database&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">psycopg2</span><span class="o">.</span><span class="n">Error</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Database error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+        
+<div class="viewcode-block" id="identify_datetime"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.identify_datetime">[docs]</a><span class="k">def</span> <span class="nf">identify_datetime</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Identifies the start and end date-time values from a given text.</span>
+<span class="sd">    :param text: the input text containing date-time information</span>
+<span class="sd">    :return: if both of them are found, returns a tuple containing start and end date-time values in the format (start_date_time, end_date_time), otherwise returns a tuple of None</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">date_pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;\d</span><span class="si">{4}</span><span class="s1">-\d</span><span class="si">{2}</span><span class="s1">-\d</span><span class="si">{2}</span><span class="s1"> \d</span><span class="si">{2}</span><span class="s1">:\d</span><span class="si">{2}</span><span class="s1">&#39;</span>
+    <span class="n">dates</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">date_pattern</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="nb">len</span><span class="p">(</span><span class="n">dates</span><span class="p">)</span> <span class="o">&gt;=</span> <span class="mi">2</span><span class="p">:</span>
+        <span class="k">return</span> <span class="n">dates</span><span class="p">[</span><span class="mi">0</span><span class="p">],</span> <span class="n">dates</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Not enough start and end dates were found&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span></div>
+
+<div class="viewcode-block" id="identify_participants"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.identify_participants">[docs]</a><span class="k">def</span> <span class="nf">identify_participants</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Identifies participants&#39; names from the given text.</span>
+<span class="sd">    :param text: the input text containing information about participants</span>
+<span class="sd">    :return: a string containing the identified participants&#39; names, separated by commas</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">name_pattern</span> <span class="o">=</span> <span class="sa">r</span><span class="s1">&#39;\b(?:[A-Z][a-z]* ){1,3}[A-Z][a-z]*\b&#39;</span>
+    <span class="n">potential_names</span> <span class="o">=</span> <span class="n">re</span><span class="o">.</span><span class="n">findall</span><span class="p">(</span><span class="n">name_pattern</span><span class="p">,</span> <span class="n">text</span><span class="p">)</span>
+    <span class="n">participants</span> <span class="o">=</span> <span class="s1">&#39;, &#39;</span><span class="o">.</span><span class="n">join</span><span class="p">(</span><span class="n">potential_names</span><span class="p">)</span>
+    
+    <span class="k">return</span> <span class="n">participants</span></div>
+        
+<div class="viewcode-block" id="identify_datetime_and_participants"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.identify_datetime_and_participants">[docs]</a><span class="k">def</span> <span class="nf">identify_datetime_and_participants</span><span class="p">(</span><span class="n">text</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Identifies start date-time, end date-time, and participants&#39;s names from the given text.</span>
+<span class="sd">    :param text: the input text containing information about date-time and participants</span>
+<span class="sd">    :return: If valid date-time information and participants are identified, returns a tuple in the format (start_date_time, end_date_time, [participants_list]). If insufficient or invalid information is found, it returns None for all values.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span> <span class="o">=</span> <span class="n">identify_datetime</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+    
+    <span class="k">if</span> <span class="n">start_time</span> <span class="ow">and</span> <span class="n">end_time</span><span class="p">:</span>
+        <span class="n">participants_text</span> <span class="o">=</span> <span class="n">text</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="n">end_time</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">strip</span><span class="p">()</span>
+        <span class="n">participants</span> <span class="o">=</span> <span class="n">identify_participants</span><span class="p">(</span><span class="n">participants_text</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="s1">&#39;,&#39;</span> <span class="ow">in</span> <span class="n">participants</span><span class="p">:</span> 
+            <span class="k">return</span> <span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">,</span> <span class="n">participants</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;, &#39;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span> <span class="c1"># a single person&#39;s name</span>
+            <span class="n">extracted_name</span> <span class="o">=</span> <span class="n">extract_person_name</span><span class="p">(</span><span class="n">text</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">extracted_name</span><span class="p">:</span>
+                <span class="k">return</span> <span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">,</span> <span class="p">[</span><span class="n">extracted_name</span><span class="p">]</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Names of participants are invalid&quot;</span><span class="p">)</span>
+                <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span>
+    <span class="k">else</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span></div>
+    
+<div class="viewcode-block" id="validate_date"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.validate_date">[docs]</a><span class="k">def</span> <span class="nf">validate_date</span><span class="p">(</span><span class="n">date_text</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Checks if the input text conforms to a valid date-time format.</span>
+<span class="sd">    :param date_text: the input text representing a date-time string</span>
+<span class="sd">    :return: True if the input string matches the specified date-time format, False otherwise</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">datetime</span><span class="o">.</span><span class="n">strptime</span><span class="p">(</span><span class="n">date_text</span><span class="p">,</span> <span class="s2">&quot;%Y-%m-</span><span class="si">%d</span><span class="s2"> %H:%M&quot;</span><span class="p">)</span>
+        <span class="k">return</span> <span class="kc">True</span>
+    <span class="k">except</span> <span class="ne">ValueError</span><span class="p">:</span>
+        <span class="k">return</span> <span class="kc">False</span></div>
+    
+<div class="viewcode-block" id="schedule_meeting"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.schedule_meeting">[docs]</a><span class="k">def</span> <span class="nf">schedule_meeting</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">,</span> <span class="n">participants</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Schedule a meeting in the database, if not already exists, given start and end times along with participants.</span>
+<span class="sd">    :param start_time: the starting time of the meeting </span>
+<span class="sd">    :param end_time: the ending time of the meeting</span>
+<span class="sd">    :param participants: a comma-separated string of participant names</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">start_time</span> <span class="o">&gt;=</span> <span class="n">end_time</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Start time should be before end time.&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+
+        <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;SELECT * FROM Meetings WHERE start_time = </span><span class="si">%s</span><span class="s2"> AND end_time = </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">))</span>
+        <span class="n">existing_meeting</span> <span class="o">=</span> <span class="n">cur</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">existing_meeting</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Meeting already exists with the same start and end time.&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;INSERT INTO Meetings (start_time, end_time, participants) VALUES (</span><span class="si">%s</span><span class="s2">, </span><span class="si">%s</span><span class="s2">, </span><span class="si">%s</span><span class="s2">)&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">,</span> <span class="n">participants</span><span class="p">))</span>
+            <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Meeting scheduled successfully&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">psycopg2</span><span class="o">.</span><span class="n">Error</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="n">conn</span><span class="o">.</span><span class="n">rollback</span><span class="p">()</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Database error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+<div class="viewcode-block" id="schedule_meeting_from_input"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.schedule_meeting_from_input">[docs]</a><span class="k">def</span> <span class="nf">schedule_meeting_from_input</span><span class="p">(</span><span class="n">command</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Parse user input command to schedule a meeting.</span>
+<span class="sd">    :param command: the input command that contains meeting details</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">,</span> <span class="n">participants</span> <span class="o">=</span> <span class="n">identify_datetime_and_participants</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">validate_date</span><span class="p">(</span><span class="n">start_time</span><span class="p">)</span> <span class="ow">and</span> <span class="n">validate_date</span><span class="p">(</span><span class="n">end_time</span><span class="p">)):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;The date format entered is invalid. Please use the format YYYY-MM-DD HH:MM&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+        
+        <span class="n">schedule_meeting</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">,</span> <span class="n">participants</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;An error occurred: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+        
+<div class="viewcode-block" id="get_meetings_in_interval"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.get_meetings_in_interval">[docs]</a><span class="k">def</span> <span class="nf">get_meetings_in_interval</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Retrieving meetings from the database within a specified timeframe (start_time, end_time) and displaying them.</span>
+<span class="sd">    :param start_time: the start time of the interval</span>
+<span class="sd">    :param end_time: the end time of the interval</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;SELECT * FROM Meetings WHERE start_time &gt;= </span><span class="si">%s</span><span class="s2"> AND end_time &lt;= </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">))</span>
+        <span class="n">meetings</span> <span class="o">=</span> <span class="n">cur</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+
+        <span class="k">if</span> <span class="n">meetings</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Meetings:&quot;</span><span class="p">)</span>
+            <span class="k">for</span> <span class="n">meeting</span> <span class="ow">in</span> <span class="n">meetings</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Start Time: </span><span class="si">{</span><span class="n">meeting</span><span class="p">[</span><span class="mi">1</span><span class="p">]</span><span class="si">}</span><span class="s2">, End Time: </span><span class="si">{</span><span class="n">meeting</span><span class="p">[</span><span class="mi">2</span><span class="p">]</span><span class="si">}</span><span class="s2">, Participants: </span><span class="si">{</span><span class="n">meeting</span><span class="p">[</span><span class="mi">3</span><span class="p">]</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;No meetings found in the specified interval&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">psycopg2</span><span class="o">.</span><span class="n">Error</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Database error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+        
+<div class="viewcode-block" id="display_meetings_from_input"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.display_meetings_from_input">[docs]</a><span class="k">def</span> <span class="nf">display_meetings_from_input</span><span class="p">(</span><span class="n">command</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Display meetings based on the time interval specified in the input command.</span>
+<span class="sd">    :param command: the user command containing information about the time interval</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span> <span class="o">=</span> <span class="n">identify_datetime</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="ow">not</span> <span class="p">(</span><span class="n">validate_date</span><span class="p">(</span><span class="n">start_time</span><span class="p">)</span> <span class="ow">and</span> <span class="n">validate_date</span><span class="p">(</span><span class="n">end_time</span><span class="p">)):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;The date format entered is invalid. Please use the format YYYY-MM-DD HH:MM&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+        
+        <span class="n">get_meetings_in_interval</span><span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;An error occurred: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+        
+<div class="viewcode-block" id="export_to_ical"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.export_to_ical">[docs]</a><span class="k">def</span> <span class="nf">export_to_ical</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Export meetings from the database to an iCalendar file.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;SELECT * FROM Meetings&quot;</span><span class="p">)</span>
+        <span class="n">meetings</span> <span class="o">=</span> <span class="n">cur</span><span class="o">.</span><span class="n">fetchall</span><span class="p">()</span>
+
+        <span class="n">cal</span> <span class="o">=</span> <span class="n">Calendar</span><span class="p">()</span>
+
+        <span class="k">for</span> <span class="n">meeting</span> <span class="ow">in</span> <span class="n">meetings</span><span class="p">:</span>
+            <span class="n">event</span> <span class="o">=</span> <span class="n">Event</span><span class="p">()</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s1">&#39;summary&#39;</span><span class="p">,</span> <span class="s1">&#39;Meeting&#39;</span><span class="p">)</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s1">&#39;dtstart&#39;</span><span class="p">,</span> <span class="n">meeting</span><span class="p">[</span><span class="mi">1</span><span class="p">])</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s1">&#39;dtend&#39;</span><span class="p">,</span> <span class="n">meeting</span><span class="p">[</span><span class="mi">2</span><span class="p">])</span>
+            <span class="n">event</span><span class="o">.</span><span class="n">add</span><span class="p">(</span><span class="s1">&#39;description&#39;</span><span class="p">,</span> <span class="n">meeting</span><span class="p">[</span><span class="mi">3</span><span class="p">])</span>
+            <span class="n">cal</span><span class="o">.</span><span class="n">add_component</span><span class="p">(</span><span class="n">event</span><span class="p">)</span>
+
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="s1">&#39;meetings.ics&#39;</span><span class="p">,</span> <span class="s1">&#39;wb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">f</span><span class="o">.</span><span class="n">write</span><span class="p">(</span><span class="n">cal</span><span class="o">.</span><span class="n">to_ical</span><span class="p">())</span>
+
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Meetings exported to meetings.ics&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="n">psycopg2</span><span class="o">.</span><span class="n">Error</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Database error: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error exporting to iCalendar: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+        
+<div class="viewcode-block" id="import_from_ical"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.import_from_ical">[docs]</a><span class="k">def</span> <span class="nf">import_from_ical</span><span class="p">(</span><span class="n">file_path</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Import meetings from an iCalendar file into the database.</span>
+<span class="sd">    :param file_path: the path to the iCalendar file to be imported</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="ow">not</span> <span class="n">file_path</span><span class="o">.</span><span class="n">endswith</span><span class="p">(</span><span class="s1">&#39;.ics&#39;</span><span class="p">):</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Invalid file format. Please provide a file with the .ics extension&quot;</span><span class="p">)</span>
+            <span class="k">return</span>
+        
+        <span class="k">with</span> <span class="nb">open</span><span class="p">(</span><span class="n">file_path</span><span class="p">,</span> <span class="s1">&#39;rb&#39;</span><span class="p">)</span> <span class="k">as</span> <span class="n">f</span><span class="p">:</span>
+            <span class="n">cal</span> <span class="o">=</span> <span class="n">Calendar</span><span class="o">.</span><span class="n">from_ical</span><span class="p">(</span><span class="n">f</span><span class="o">.</span><span class="n">read</span><span class="p">())</span>
+
+        <span class="k">for</span> <span class="n">component</span> <span class="ow">in</span> <span class="n">cal</span><span class="o">.</span><span class="n">walk</span><span class="p">():</span>
+            <span class="k">if</span> <span class="n">component</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="s1">&#39;VEVENT&#39;</span><span class="p">:</span>
+                <span class="n">start_time</span> <span class="o">=</span> <span class="n">component</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;dtstart&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span>
+                <span class="n">end_time</span> <span class="o">=</span> <span class="n">component</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;dtend&#39;</span><span class="p">)</span><span class="o">.</span><span class="n">dt</span>
+                <span class="n">description</span> <span class="o">=</span> <span class="n">component</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="s1">&#39;description&#39;</span><span class="p">)</span>
+                
+                <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;SELECT * FROM Meetings WHERE start_time = </span><span class="si">%s</span><span class="s2"> AND end_time = </span><span class="si">%s</span><span class="s2">&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">))</span>
+                <span class="n">existing_meeting</span> <span class="o">=</span> <span class="n">cur</span><span class="o">.</span><span class="n">fetchone</span><span class="p">()</span>
+
+                <span class="k">if</span> <span class="n">existing_meeting</span><span class="p">:</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Meeting </span><span class="si">{</span><span class="n">start_time</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">end_time</span><span class="si">}</span><span class="s2"> already exists&quot;</span><span class="p">)</span>
+                <span class="k">else</span><span class="p">:</span>
+                    <span class="n">cur</span><span class="o">.</span><span class="n">execute</span><span class="p">(</span><span class="s2">&quot;INSERT INTO Meetings (start_time, end_time, participants) VALUES (</span><span class="si">%s</span><span class="s2">, </span><span class="si">%s</span><span class="s2">, </span><span class="si">%s</span><span class="s2">)&quot;</span><span class="p">,</span> <span class="p">(</span><span class="n">start_time</span><span class="p">,</span> <span class="n">end_time</span><span class="p">,</span> <span class="n">description</span><span class="p">))</span>
+                    <span class="n">conn</span><span class="o">.</span><span class="n">commit</span><span class="p">()</span>
+                    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Meeting </span><span class="si">{</span><span class="n">start_time</span><span class="si">}</span><span class="s2"> to </span><span class="si">{</span><span class="n">end_time</span><span class="si">}</span><span class="s2"> imported from iCalendar&quot;</span><span class="p">)</span>
+                
+    <span class="k">except</span> <span class="ne">FileNotFoundError</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;File not found&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;Error importing from iCalendar: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>           </div>
+
+<div class="viewcode-block" id="process_command"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.process_command">[docs]</a><span class="k">def</span> <span class="nf">process_command</span><span class="p">(</span><span class="n">command</span><span class="p">):</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Process the given command to perform specific actions.</span>
+<span class="sd">    :param command: the input command to be processed</span>
+
+<span class="sd">    Example Commands:</span>
+<span class="sd">    - &#39;adauga persoana Popescu Ion&#39;</span>
+<span class="sd">    - &#39;adauga sedinta care va incepe la 2020-11-20 14:00, se va termina la 2020-11-20 14:30 si la care vor participa Ion Popescu, Ana Maria&#39;</span>
+<span class="sd">    - &#39;adauga sedinta din intervalul 2020-11-20 14:00 si 2020-11-20 14:30, la care participa urmatoarele persoane Ion Popescu, Ana Maria&#39;</span>
+<span class="sd">    - &#39;adauga sedinta 2020-11-20 14:00 2020-11-20 14:30, cu participantii Ion Popescu, Ana Maria&#39;</span>
+<span class="sd">    - &#39;afiseaza sedintele din intervalul 2020-11-20 08:00, 2020-11-20 23:59&#39;</span>
+<span class="sd">    - &#39;exporta sedintele&#39;</span>
+<span class="sd">    - &#39;importa sedintele din meetings.ics&#39;</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="k">try</span><span class="p">:</span>
+        <span class="k">if</span> <span class="n">command</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;adauga persoana&#39;</span><span class="p">):</span>
+            <span class="n">person_name</span> <span class="o">=</span> <span class="n">extract_person_name</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+            <span class="k">if</span> <span class="n">person_name</span> <span class="ow">is</span> <span class="ow">not</span> <span class="kc">None</span><span class="p">:</span>
+                <span class="n">add_person</span><span class="p">(</span><span class="n">person_name</span><span class="p">)</span>
+            <span class="k">else</span><span class="p">:</span>
+                <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Invalid name&quot;</span><span class="p">)</span>
+                
+        <span class="k">elif</span> <span class="n">command</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;adauga sedinta&#39;</span><span class="p">):</span>
+            <span class="n">schedule_meeting_from_input</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+            
+        <span class="k">elif</span> <span class="n">command</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;afiseaza sedintele&#39;</span><span class="p">):</span>
+            <span class="n">display_meetings_from_input</span><span class="p">(</span><span class="n">command</span><span class="p">)</span>
+            
+        <span class="k">elif</span> <span class="n">command</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;exporta sedintele&#39;</span><span class="p">):</span>
+            <span class="n">export_to_ical</span><span class="p">()</span>
+            
+        <span class="k">elif</span> <span class="n">command</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;importa sedintele&#39;</span><span class="p">):</span>
+            <span class="n">file_path</span> <span class="o">=</span> <span class="n">command</span><span class="o">.</span><span class="n">split</span><span class="p">(</span><span class="s1">&#39;importa sedintele din &#39;</span><span class="p">)[</span><span class="mi">1</span><span class="p">]</span>
+            <span class="n">import_from_ical</span><span class="p">(</span><span class="n">file_path</span><span class="p">)</span>
+            
+        <span class="k">else</span><span class="p">:</span>
+            <span class="nb">print</span><span class="p">(</span><span class="s2">&quot;Invalid command&quot;</span><span class="p">)</span>
+    <span class="k">except</span> <span class="ne">Exception</span> <span class="k">as</span> <span class="n">e</span><span class="p">:</span>
+        <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;An error occurred: </span><span class="si">{</span><span class="n">e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span></div>
+
+
+<div class="viewcode-block" id="main"><a class="viewcode-back" href="../docs/MeetingScheduler.html#MeetingScheduler.main">[docs]</a><span class="k">def</span> <span class="nf">main</span><span class="p">():</span>
+    <span class="sd">&quot;&quot;&quot;</span>
+<span class="sd">    Main function to manage user input and command processing for database operations.</span>
+<span class="sd">    &quot;&quot;&quot;</span>
+    <span class="n">initialize_database</span><span class="p">()</span>    
+    
+    <span class="k">while</span> <span class="kc">True</span><span class="p">:</span>
+        <span class="n">command</span> <span class="o">=</span> <span class="nb">input</span><span class="p">(</span><span class="s2">&quot;Input: &quot;</span><span class="p">)</span>
+        
+        <span class="k">if</span> <span class="n">command</span><span class="o">.</span><span class="n">lower</span><span class="p">()</span><span class="o">.</span><span class="n">startswith</span><span class="p">(</span><span class="s1">&#39;exit&#39;</span><span class="p">):</span>
+            <span class="k">break</span>
+        
+        <span class="n">process_command</span><span class="p">(</span><span class="n">command</span><span class="p">)</span></div>
+
+
+<span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">&quot;__main__&quot;</span><span class="p">:</span>
+    <span class="n">main</span><span class="p">()</span>
+    
+<span class="c1"># Close the cursor and the database connection.</span>
+<span class="n">cur</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<span class="n">conn</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</pre></div>
+
+          </div>
+          
+        </div>
+      </div>
+      <div class="sphinxsidebar" role="navigation" aria-label="main navigation">
+        <div class="sphinxsidebarwrapper">
+<h1 class="logo"><a href="../index.html">MeetingScheduler</a></h1>
+
+
+
+
+
+
+
+
+<h3>Navigation</h3>
+
+<div class="relations">
+<h3>Related Topics</h3>
+<ul>
+  <li><a href="../index.html">Documentation overview</a><ul>
+  <li><a href="index.html">Module code</a><ul>
+  </ul></li>
+  </ul></li>
+</ul>
+</div>
+<div id="searchbox" style="display: none" role="search">
+  <h3 id="searchlabel">Quick search</h3>
+    <div class="searchformwrapper">
+    <form class="search" action="../search.html" method="get">
+      <input type="text" name="q" aria-labelledby="searchlabel" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"/>
+      <input type="submit" value="Go" />
+    </form>
+    </div>
+</div>
+<script>$('#searchbox').show(0);</script>
+
+
+
+
+
+
+
+
+        </div>
+      </div>
+      <div class="clearer"></div>
+    </div>
+    <div class="footer">
+      &copy;2023, Laura Bondor.
+      
+      |
+      Powered by <a href="http://sphinx-doc.org/">Sphinx 4.3.2</a>
+      &amp; <a href="https://github.com/bitprophet/alabaster">Alabaster 0.7.12</a>
+      
+    </div>
+
+    
+
+    
+  </body>
+</html>
