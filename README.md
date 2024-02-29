@@ -6,7 +6,7 @@ Meeting Scheduler is a graphical application developed as part of the "Programmi
 
 1. PostgreSQL Database Integration:
 
-+Meeting Scheduler integrates with a PostgreSQL database to store and manage meeting-related information and attendee details.
++ Meeting Scheduler integrates with a PostgreSQL database to store and manage meeting-related information and attendee details.
 
 2. Interactive Menu Interface:
 
@@ -23,8 +23,8 @@ Meeting Scheduler is a graphical application developed as part of the "Programmi
   
 4. Export/Import Functionality:
 
-+Users can export and import meeting data to/from a chosen standard calendar format.
-+The export/import functionality is implemented exclusively for a single calendar format to maintain simplicity.
++ Users can export and import meeting data to/from a chosen standard calendar format.
++ The export/import functionality is implemented exclusively for a single calendar format to maintain simplicity.
 
 Example commands in the interactive menu:
 ```
